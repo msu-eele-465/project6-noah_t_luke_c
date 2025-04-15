@@ -8,7 +8,7 @@ const char colPins[4] = {BIT0, BIT1, BIT2, BIT3};
 
 
 
-void keypad_init(void){
+void keypad_config(void){
     WDTCTL = WDTPW | WDTHOLD;  // Stop watchdog timer
 
     // Status LED setup
@@ -47,22 +47,6 @@ void keypad_init(void){
     P1OUT &= ~BIT0;  // Clear P1.0
 
     PM5CTL0 &= ~LOCKLPM5;  // Enable GPIO
-
-    // Setup Timer B0
-    TB0CTL |= TBCLR;  // Clear timer and dividers
-    TB0CTL |= TBSSEL__ACLK;  // Use ACLK
-    TB0CTL |= MC__UP;  // Up counting mode
-    TB0CCR0 = 32768;    // Compare value
-    TB0CCR1 = 32768;    // CCR1 value
-
-    // Set up timer compare IRQs
-    TB0CCTL0 &= ~CCIFG;  // Clear CCR0 flag
-    //TB0CCTL0 |= CCIE;  // Enable flag
-
-    // Set up timer compare IRQs
-    TB0CCTL1 &= ~CCIFG;  // Clear CCR1 flag
-    //TB0CCTL1 |= CCIE;  // Enable flag
-
 }
 
 

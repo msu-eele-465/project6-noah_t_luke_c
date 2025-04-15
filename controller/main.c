@@ -1,27 +1,21 @@
 #include "intrinsics.h"
 #include <msp430.h>
 #include "keypad.h"
+#include "msp430fr2355.h"
 #include <math.h>
 
 #define unlock_code "1738"
 
 unsigned char data = 0x00;
+
 int lock_status = 1;
-int window = 0;
-char key_pressed;
+
+volatile char key_pressed = 0;
+volatile int key_flag = 0;
 
 float ADC_Result;
 float temp;
 float calc;
-int real_temp;
-
-int letters_set_pattern[] = {0b01010011, 0b01100101, 0b01110100, 0b01000000, 0b01010000, 0b01100001, 0b01110100, 0b01110100, 0b01100101, 0b01110000, 0b01101110};
-int letters_set_window[] = {0b01010011, 0b01100101, 0b01110100, 0b01000000, 0b01010111, 0b01101001, 0b01101110, 0b01100100, 0b01101111, 0b01110111, 0b01000000, 0b01010011, 0b01101001, 0b01111010, 0b01100101};
-int letters_pattern_static[] = {0b01010011, 0b01110100, 0b01100001, 0b01110100, 0b01101001, 0b01100011};
-int letters_pattern_toggle[] = {0b01010100, 0b01111010, 0b01100111, 0b01100111, 0b01101100, 0b01100101};
-int letters_pattern_up_counter[] = {0b01010101, 0b01110000, 0b01000000, 0b01100011, 0b01110101, 0b01101110, 0b01110100, 0b01100101, 0b01110000};
-int letters_pattern_in_and_out[] = {0b01001001, 0b01101110, 0b01000000, 0b01100001, 0b01101110, 0b01100110, 0b01000000, 0b01100011, 0b01110100};
-
 
 void i2c_config(){
     // Configure USCI_B0 for I2C mode
@@ -47,160 +41,52 @@ void i2c_config(){
     UCB0CTLW0 &= ~UCSWRST;
 
     // I2C interrupt
-    UCB0IE |= UCTXIE0;    
+    UCB0IE |= UCTXIE0; 
 }
 
+void timer_setup(){
+    // Setup Timer B0
+    TB0CTL |= TBCLR;  // Clear timer and dividers
+    TB0CTL |= TBSSEL__ACLK;  // Use ACLK
+    TB0CTL |= MC__UP;  // Up counting mode
+    TB0CCR0 = 32768;    // Compare value
+    TB0CCR1 = 16384;    // CCR1 value
 
+    // Set up timer compare IRQs
+    TB0CCTL0 &= ~CCIFG;  // Clear CCR0 flag
+    TB0CCTL0 |= CCIE;  // Enable flag
 
-void write_set_pattern(){
-    UCB0I2CSA = 0x0B;                      // LCD slave address
-    data = 0x00;                           // Send 0 so LCD writes to top line
-    UCB0CTLW0 |= UCTXSTT;                  // Transmit
-    __delay_cycles(200);
-    int i = 0;
-    for (i = 0; i < sizeof(letters_set_pattern); i++) {
-        data = letters_set_pattern[i];                 // Set data to be transmited to next letter code
-        UCB0CTLW0 |= UCTXSTT;              // Transmit
-        __delay_cycles(200);
-    }
-    __delay_cycles(200);
-    UCB0I2CSA = 0x00;                      // Reset slave address
+    // Set up timer compare IRQs
+    TB0CCTL1 &= ~CCIFG;  // Clear CCR1 flag
+    TB0CCTL1 |= CCIE;  // Enable flag
 }
 
-void write_set_window(){
-    UCB0I2CSA = 0x0B;                      // LCD slave address
-    data = 0x00;                           // Send 0 so LCD writes to top line
-    UCB0CTLW0 |= UCTXSTT;                  // Transmit
-    int i = 0;
-    for (i = 0; i < sizeof(letters_set_window); i++) {
-        data = letters_set_window[i];                 // Set data to be transmited to next letter code
-        UCB0CTLW0 |= UCTXSTT;              // Transmit
-    }
-    UCB0I2CSA = 0x00;                      // Reset slave address
+void io_pins_config(){
+    // P1.0 Heartbeat LED
+    P1DIR |= BIT0;
+    P1OUT &= ~BIT0;
+
+    // P4.3 Cool
+    P4DIR |= BIT3;
+    P4OUT &= ~BIT3;
+
+    // P4.2 Heat
+    P4DIR |= BIT2;
+    P4OUT &= ~BIT2;
+
+    // Configure ADC A1 pin
+    P1SEL0 |= BIT1;
+    P1SEL1 |= BIT1;
 }
 
-void write_pattern_static(){
-    UCB0I2CSA = 0x0B;                      // LCD slave address
-    data = 0x00;                           // Send 0 so LCD writes to top line
-    UCB0CTLW0 |= UCTXSTT;                  // Transmit
-    int i = 0;
-    for (i = 0; i < sizeof(letters_pattern_static); i++) {
-        data = letters_pattern_static[i];  // Set data to be transmited to next letter code
-        UCB0CTLW0 |= UCTXSTT;              // Transmit
-    }
-    UCB0I2CSA = 0x00;                      // Reset slave address
-}
-
-void write_pattern_toggle(){
-    UCB0I2CSA = 0x0B;                      // LCD slave address
-    data = 0x00;                           // Send 0 so LCD writes to top line
-    UCB0CTLW0 |= UCTXSTT;                  // Transmit
-    int i = 0;
-    for (i = 0; i < sizeof(letters_pattern_toggle); i++) {
-        data = letters_pattern_toggle[i];  // Set data to be transmited to next letter code
-        while (UCB0CTL1 & UCTXSTP);
-        UCB0CTLW0 |= UCTXSTT;              // Transmit
-    }
-    UCB0I2CSA = 0x00;                      // Reset slave address
-}
-
-void write_pattern_up_counter(){
-    UCB0I2CSA = 0x0B;                      // LCD slave address
-    data = 0x00;                           // Send 0 so LCD writes to top line
-    UCB0CTLW0 |= UCTXSTT;                  // Transmit
-    int i = 0;
-    for (i = 0; i < sizeof(letters_pattern_up_counter); i++) {
-        data = letters_pattern_up_counter[i];  // Set data to be transmited to next letter code
-        UCB0CTLW0 |= UCTXSTT;                  // Transmit
-    }
-    UCB0I2CSA = 0x00;                          // Reset slave address
-}
-
-void write_pattern_in_and_out(){
-    UCB0I2CSA = 0x0B;                      // LCD slave address
-    data = 0x00;                           // Send 0 so LCD writes to top line
-    UCB0CTLW0 |= UCTXSTT;                  // Transmit
-    int i = 0;
-    for (i = 0; i < sizeof(letters_pattern_in_and_out); i++) {
-        data = letters_pattern_in_and_out[i];  // Set data to be transmited to next letter code
-        UCB0CTLW0 |= UCTXSTT;                  // Transmit
-    }
-    UCB0I2CSA = 0x00;                          // Reset slave address
-}
-
-void transmit_pattern_led(){
-    UCB0I2CSA = 0x0A;                       // LEDbar slave address
-    switch (key_pressed) {
-        case '0': 
-            data = key_pressed - '0';       // Convert char to integer
-            UCB0CTLW0 |= UCTXSTT;     
-            write_pattern_static();                   
-            break;
-        case '1': 
-            data = key_pressed - '0';       // Convert char to integer
-            UCB0CTLW0 |= UCTXSTT;  
-            write_pattern_toggle();                         
-            break;
-        case '2': 
-            data = key_pressed - '0';       // Convert char to integer
-            UCB0CTLW0 |= UCTXSTT;
-            write_pattern_up_counter();                           
-            break;
-        case '3': 
-            data = key_pressed - '0';       // Convert char to integer
-            UCB0CTLW0 |= UCTXSTT;
-            write_pattern_in_and_out();                           
-            break;
-    }
-        UCB0I2CSA = 0x00;                   // Reset slave address
-}
-
-void lcd_window_size_transmit(){
-    UCB0I2CSA = 0x0B;                       // LCD slave address
-    switch (key_pressed) {
-        case '0': 
-            data = 0;       // Convert char to integer
-            UCB0CTLW0 |= UCTXSTT;                        
-            break;
-        case '1': 
-            data = 1;       // Convert char to integer
-            UCB0CTLW0 |= UCTXSTT;
-            while (UCB0CTL1 & UCTXSTP);                           
-            break;
-        case '2': 
-            data = 2;       
-            UCB0CTLW0 |= UCTXSTT;                           
-            break;
-        case '3': 
-            data = 3;       // Convert char to integer
-            UCB0CTLW0 |= UCTXSTT;                           
-            break;
-        case '4': 
-            data = 4;       // Convert char to integer
-            UCB0CTLW0 |= UCTXSTT;                        
-            break;
-        case '5': 
-            data = 5;       // Convert char to integer
-            UCB0CTLW0 |= UCTXSTT;                           
-            break;
-        case '6': 
-            data = 6;       // Convert char to integer
-            UCB0CTLW0 |= UCTXSTT;                           
-            break;
-        case '7': 
-            data = 7;       // Convert char to integer
-            UCB0CTLW0 |= UCTXSTT;                           
-            break;
-        case '8': 
-            data = 8;       // Convert char to integer
-            UCB0CTLW0 |= UCTXSTT;                           
-            break;
-        case '9': 
-            data = 9;       // Convert char to integer
-            UCB0CTLW0 |= UCTXSTT;                           
-            break;
-    }
-    UCB0I2CSA = 0x00;                       // Reset slave address
+void adc_config(){
+    // Configure ADC12
+    ADCCTL0 |= ADCSHT_2 | ADCON;                             // ADCON, S&H=16 ADC clks
+    ADCCTL1 |= ADCSHP;                                       // ADCCLK = MODOSC; sampling timer
+    ADCCTL2 &= ~ADCRES;                                      // clear ADCRES in ADCCTL
+    ADCCTL2 |= ADCRES_2;                                     // 12-bit conversion results
+    ADCMCTL0 |= ADCINCH_1 | ADCSREF_1;                       // A1 ADC input select; Vref=AVCC
+    ADCIE |= ADCIE0; 
 }
 
 int main(void)
@@ -208,140 +94,98 @@ int main(void)
     // Stop WDT
     WDTCTL = WDTPW | WDTHOLD;
 
-    TB0CCTL0 |= CCIE;                                             // TBCCR0 interrupt enabled
-    TB0CCR0 = 32;
-    TB0CTL = TBSSEL__ACLK | MC__UP;                               // ACLK, UP mode
-
-    // Configure ADC A1 pin
-    P1SEL0 |= BIT1;
-    P1SEL1 |= BIT1;
-
-    // Configure ADC12
-    ADCCTL0 |= ADCSHT_2 | ADCON;                             // ADCON, S&H=16 ADC clks
-    ADCCTL1 |= ADCSHP;                                       // ADCCLK = MODOSC; sampling timer
-    ADCCTL2 &= ~ADCRES;                                      // clear ADCRES in ADCCTL
-    ADCCTL2 |= ADCRES_2;                                     // 12-bit conversion results
-    ADCMCTL0 |= ADCINCH_1;                                   // A1 ADC input select; Vref=AVCC
-    ADCIE |= ADCIE0;                                         // Enable ADC conv complete interrupt
-
-    // Set up I2C
+    // Setup I2C
     i2c_config();
 
-    // Set up I2C
-    keypad_init();
+    // Setup keypad
+    keypad_config();
+
+    // Setup timer
+    timer_setup();
+
+    // Other pins
+    io_pins_config();
+
+    // Config the ADC
+    adc_config();
 
     // Disable low power mode
-    PM5CTL0 &= ~LOCKLPM5;
-    UCB0CTLW0 &= ~UCSWRST;
-
-    // I2C interrupt
-    UCB0IE |= UCTXIE0;  
+    PM5CTL0 &= ~LOCKLPM5; 
 
     // Enable interrupts
     __enable_interrupt();
+
+    lock_keypad(unlock_code);
     
-    
-    while (1)
-    {   
-        if(lock_status == 1)
-        {
-            lock_keypad(unlock_code);
-            lock_status = 0;
-        }   
-        UCB0I2CSA = 0x0B;        
-        while (UCB0CTL1 & UCTXSTP);
-        while(key_pressed != 'A' && key_pressed != 'B') 
-        {      
-            real_temp = 100*temp;
-            int thousands = (real_temp/1000) + 48;
-            real_temp %= 1000;
-            int hundreds = (real_temp/100) + 48;
-            real_temp %= 100;
-            int tens = (real_temp/10) + 48;
-            int ones = (real_temp%10) + 48;
-            data = 0xAD;
-            UCB0CTLW0 |= UCTXSTT;
-            while (UCB0CTL1 & UCTXSTP);
-            __delay_cycles(2000);
-            data = thousands;
-            UCB0CTLW0 |= UCTXSTT;
-            while (UCB0CTL1 & UCTXSTP);
-            __delay_cycles(2000);
-            data = hundreds;
-            UCB0CTLW0 |= UCTXSTT;
-            while (UCB0CTL1 & UCTXSTP);
-            __delay_cycles(2000);
-            data = 0b00101110;
-            UCB0CTLW0 |= UCTXSTT;
-            while (UCB0CTL1 & UCTXSTP);
-            __delay_cycles(2000);
-            data = tens;
-            UCB0CTLW0 |= UCTXSTT;
-            while (UCB0CTL1 & UCTXSTP);
-            __delay_cycles(200000);  
- 
+    while (1) {
+        if(key_flag == 1){
+            switch (key_pressed) {
+                case 'D' : 
+                    data = 0x00;
+                    UCB0CTLW0 |= UCTXSTT;
+                    P4OUT &= ~(BIT2 | BIT3);
+                    lock_keypad(unlock_code);
+                    lock_status = 0;
+                    break;
+
+                case 'A' : 
+                    // Heat
+                    // P4.2 is heat
+                    P4OUT |= BIT2;
+                    P4OUT &= ~BIT3;
+                    data = 0x01;
+                    UCB0CTLW0 |= UCTXSTT;
+                    break;
+
+                case 'B' : 
+                    // Cool
+                    // P4.3 is cool
+                    P4OUT |= BIT3;
+                    P4OUT &= ~BIT2;
+                    data = 0x02;
+                    UCB0CTLW0 |= UCTXSTT;
+                    break;
+
+                case 'C' : 
+                    // Match Ambient
+
+                    data = 0x03;
+                    UCB0CTLW0 |= UCTXSTT;
+                    break;
+                    
+                default: break;                
+            }
+            
+            key_flag = 0;
         }
     }
 }
 
-
-#pragma vector=EUSCI_B0_VECTOR
+#pragma vector = EUSCI_B0_VECTOR
 __interrupt void EUSCI_B0_I2C_ISR(void){
     UCB0TXBUF = data;
+    return;
 }
 
 #pragma vector = PORT3_VECTOR
-__interrupt void ISR_PORT3_S2(void) {
+__interrupt void Port_3(void) {
+
     key_pressed = scanPad();
-    P3IFG &= ~(BIT0 | BIT1 | BIT2 | BIT3);  // Clear the interrupt flag
+
+    key_flag = 1;
+
+    P3IFG &= ~(BIT0 | BIT1 | BIT2 | BIT3); // Clear flags
 }
 
-// ADC interrupt service routine
-#if defined(__TI_COMPILER_VERSION__) || defined(__IAR_SYSTEMS_ICC__)
-#pragma vector=ADC_VECTOR
-__interrupt void ADC_ISR(void)
-#elif defined(__GNUC__)
-void __attribute__ ((interrupt(ADC_VECTOR))) ADC_ISR (void)
-#else
-#error Compiler not supported!
-#endif
-{
-    calc = 0;
-    ADC_Result = 0;
-    switch(__even_in_range(ADCIV,ADCIV_ADCIFG))
-    {
-        case ADCIV_NONE:
-            break;
-        case ADCIV_ADCOVIFG:
-            break;
-        case ADCIV_ADCTOVIFG:
-            break;
-        case ADCIV_ADCHIIFG:
-            break;
-        case ADCIV_ADCLOIFG:
-            break;
-        case ADCIV_ADCINIFG:
-            break;
-        case ADCIV_ADCIFG:
-            ADC_Result = ADCMEM0;
-            calc = (ADC_Result*3.3)/4096;
-            temp = (calc-1.8663)/(-0.01169);
-            __bic_SR_register_on_exit(LPM0_bits);            // Clear CPUOFF bit from LPM0
-            break;
-        default:
-            break;
-    }
-}
 
-// Timer B0 interrupt service routine
-#if defined(__TI_COMPILER_VERSION__) || defined(__IAR_SYSTEMS_ICC__)
 #pragma vector = TIMER0_B0_VECTOR
-__interrupt void Timer_B (void)
-#elif defined(__GNUC__)
-void __attribute__ ((interrupt(TIMER0_B0_VECTOR))) Timer_B (void)
-#else
-#error Compiler not supported!
-#endif
-{
-    ADCCTL0 |= ADCENC | ADCSC;                                    // Sampling and conversion start
+__interrupt void Timer_TB0_CCR0(void){
+    P1OUT ^= BIT0;
+    TB0CCTL0 &= ~CCIFG;
+}
+
+#pragma vector = TIMER0_B1_VECTOR
+__interrupt void Timer_TB0_CCR1(void){
+    
+    TB0CCTL1 &= ~CCIFG;
 }
