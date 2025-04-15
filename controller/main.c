@@ -25,20 +25,29 @@ int letters_pattern_in_and_out[] = {0b01001001, 0b01101110, 0b01000000, 0b011000
 
 void i2c_config(){
     // Configure USCI_B0 for I2C mode
+    
     UCB0CTLW0 |= UCSWRST;                   // Software reset enabled
+
     UCB0CTLW0 |= UCSSEL__SMCLK;
     UCB0BRW = 10;
+    
     UCB0CTLW0 |= UCMODE_3 | UCMST | UCTR;   // I2C mode, Master mode, TX
     UCB0CTLW1 |= UCASTP_2;                  // Automatic stop generated
                                             // after UCB0TBCNT is reached
 
     UCB0TBCNT = 0x0001;                     // number of bytes to be sent
-    UCB0I2CSA = 0x00;                       // Slave address
+    UCB0I2CSA = 0x0A;                       // Slave address
                                             // Two slaves are being used, 0x0A is the LEDbar, 0x0B is the LCD
                                             // When one of those keys is pressed, update slave address, send data, set back to 0x00  
     // I2C pins, 1.2 SDA, 1.3 SCL
     P1SEL1 &= ~(BIT2 & BIT3);
     P1SEL0 |= BIT2 | BIT3;     
+
+    // Disable reset mode
+    UCB0CTLW0 &= ~UCSWRST;
+
+    // I2C interrupt
+    UCB0IE |= UCTXIE0;    
 }
 
 
@@ -233,9 +242,12 @@ int main(void)
     
     
     while (1)
-    {       
-        lock_keypad(unlock_code);
-        lock_status = 0;
+    {   
+        if(lock_status == 1)
+        {
+            lock_keypad(unlock_code);
+            lock_status = 0;
+        }   
         UCB0I2CSA = 0x0B;        
         while (UCB0CTL1 & UCTXSTP);
         while(key_pressed != 'A' && key_pressed != 'B') 

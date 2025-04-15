@@ -18,6 +18,15 @@
                 "name": "i2c-ledbar",
                 "resourceId": "/i2c-ledbar"
             }
+        },
+        {
+            "name": "i2c-lcd",
+            "type": "ccs-debug",
+            "request": "launch",
+            "projectInfo": {
+                "name": "i2c-lcd",
+                "resourceId": "/i2c-lcd"
+            }
         }
     ]
 }
