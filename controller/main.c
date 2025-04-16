@@ -25,6 +25,11 @@ int thousands;
 int hundreds;
 int tens;
 
+unsigned char msb_bank;
+int msb_status;
+short plant_out;
+float plant_temp;
+
 char temp_to_send = 0;
 
 void i2c_config(){
@@ -51,7 +56,7 @@ void i2c_config(){
     UCB0CTLW0 &= ~UCSWRST;
 
     // I2C interrupt
-    UCB0IE |= UCTXIE0; 
+    UCB0IE |= UCTXIE0 | UCRXIE0;
 }
 
 void timer_setup(){
@@ -133,6 +138,7 @@ void send_ambient()
 
 void recieve_plant()
 {
+    msb_status = 1;
     UCB0CTLW0 &= ~UCTR;
     UCB0I2CSA = 0x48;
     UCB0TBCNT = 0x02;
@@ -241,8 +247,17 @@ __interrupt void EUSCI_B0_I2C_ISR(void){
     case USCI_I2C_UCRXIFG1: break;          // Vector 20: RXIFG1
     case USCI_I2C_UCTXIFG1: break;          // Vector 22: TXIFG1
     case USCI_I2C_UCRXIFG0:                 // Vector 24: RXIFG0
-                            plant = UCB0RXBUF;                   // Get RX data
-                            __bic_SR_register_on_exit(LPM0_bits); // Exit LPM0
+                            if(msb_status == 1)
+                            {
+                                msb_bank = UCB0RXBUF;
+                                msb_status = 0;
+                            }
+                            else
+                            {
+                                plant_out = (msb_bank << 8) | UCB0RXBUF;
+                                plant_out = plant_out >> 3;
+                                plant_temp = plant_out * .0625;
+                            }
                             break;
     case USCI_I2C_UCTXIFG0:                 // Vector 26: TXIFG0
                             UCB0TXBUF = data;
