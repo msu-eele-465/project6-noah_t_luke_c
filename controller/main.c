@@ -14,8 +14,17 @@ volatile char key_pressed = 0;
 volatile int key_flag = 0;
 
 float ADC_Result;
-float temp;
+float ambient_temp;
 float calc;
+int avg_ambient;
+int ambient[4];
+int n = 0;
+int real_temp;
+int thousands;
+int hundreds;
+int tens;
+
+char temp_to_send = 0;
 
 void i2c_config(){
     // Configure USCI_B0 for I2C mode
@@ -49,16 +58,16 @@ void timer_setup(){
     TB0CTL |= TBCLR;  // Clear timer and dividers
     TB0CTL |= TBSSEL__ACLK;  // Use ACLK
     TB0CTL |= MC__UP;  // Up counting mode
-    TB0CCR0 = 32768;    // Compare value
-    TB0CCR1 = 16384;    // CCR1 value
+    TB0CCR0 = 16384;    // Compare value
+    //TB0CCR1 = 16384;    // CCR1 value
 
     // Set up timer compare IRQs
     TB0CCTL0 &= ~CCIFG;  // Clear CCR0 flag
     TB0CCTL0 |= CCIE;  // Enable flag
 
     // Set up timer compare IRQs
-    TB0CCTL1 &= ~CCIFG;  // Clear CCR1 flag
-    TB0CCTL1 |= CCIE;  // Enable flag
+    //TB0CCTL1 &= ~CCIFG;  // Clear CCR1 flag
+    //TB0CCTL1 |= CCIE;  // Enable flag
 }
 
 void io_pins_config(){
@@ -85,8 +94,39 @@ void adc_config(){
     ADCCTL1 |= ADCSHP;                                       // ADCCLK = MODOSC; sampling timer
     ADCCTL2 &= ~ADCRES;                                      // clear ADCRES in ADCCTL
     ADCCTL2 |= ADCRES_2;                                     // 12-bit conversion results
-    ADCMCTL0 |= ADCINCH_1 | ADCSREF_1;                       // A1 ADC input select; Vref=AVCC
+    ADCMCTL0 |= ADCINCH_1;                                     // A1 ADC input select
     ADCIE |= ADCIE0; 
+}
+
+// Send 3 digits of the ambient temperature to the LCD in 5 transmissions
+void send_ambient()
+{
+    UCB0I2CSA = 0x0B;
+    thousands = (avg_ambient/1000) + 48;
+    avg_ambient %= 1000;
+    hundreds = (avg_ambient/100) + 48;
+    avg_ambient %= 100;
+    tens = (avg_ambient/10) + 48; 
+    data = 0xAD;
+    UCB0CTLW0 |= UCTXSTT;
+    while (UCB0CTL1 & UCTXSTP);
+    __delay_cycles(2000);
+    data = thousands;
+    UCB0CTLW0 |= UCTXSTT;
+    while (UCB0CTL1 & UCTXSTP);
+    __delay_cycles(2000);
+    data = hundreds;
+    UCB0CTLW0 |= UCTXSTT;
+    while (UCB0CTL1 & UCTXSTP);
+    __delay_cycles(2000);
+    data = 0b00101110;
+    UCB0CTLW0 |= UCTXSTT;
+    while (UCB0CTL1 & UCTXSTP);
+    __delay_cycles(2000);
+    data = tens;
+    UCB0CTLW0 |= UCTXSTT;
+    while (UCB0CTL1 & UCTXSTP);
+    __delay_cycles(2000);     
 }
 
 int main(void)
@@ -115,9 +155,10 @@ int main(void)
     // Enable interrupts
     __enable_interrupt();
 
-    lock_keypad(unlock_code);
+    //lock_keypad(unlock_code);
     
     while (1) {
+        
         if(key_flag == 1){
             switch (key_pressed) {
                 case 'D' : 
@@ -155,8 +196,12 @@ int main(void)
                     
                 default: break;                
             }
-            
             key_flag = 0;
+        }
+        if(temp_to_send == 'A')
+        {
+            send_ambient();
+            temp_to_send = 0;
         }
     }
 }
@@ -164,11 +209,10 @@ int main(void)
 #pragma vector = EUSCI_B0_VECTOR
 __interrupt void EUSCI_B0_I2C_ISR(void){
     UCB0TXBUF = data;
-    return;
 }
 
 #pragma vector = PORT3_VECTOR
-__interrupt void Port_3(void) {
+__interrupt void ISR_PORT3_S2(void) {
 
     key_pressed = scanPad();
 
@@ -177,15 +221,63 @@ __interrupt void Port_3(void) {
     P3IFG &= ~(BIT0 | BIT1 | BIT2 | BIT3); // Clear flags
 }
 
-
-#pragma vector = TIMER0_B0_VECTOR
-__interrupt void Timer_TB0_CCR0(void){
-    P1OUT ^= BIT0;
-    TB0CCTL0 &= ~CCIFG;
+// ADC interrupt service routine
+#if defined(__TI_COMPILER_VERSION__) || defined(__IAR_SYSTEMS_ICC__)
+#pragma vector=ADC_VECTOR
+__interrupt void ADC_ISR(void)
+#elif defined(__GNUC__)
+void __attribute__ ((interrupt(ADC_VECTOR))) ADC_ISR (void)
+#else
+#error Compiler not supported!
+#endif
+{
+    calc = 0;
+    ADC_Result = 0;
+    switch(__even_in_range(ADCIV,ADCIV_ADCIFG))
+    {
+        case ADCIV_NONE:
+            break;
+        case ADCIV_ADCOVIFG:
+            break;
+        case ADCIV_ADCTOVIFG:
+            break;
+        case ADCIV_ADCHIIFG:
+            break;
+        case ADCIV_ADCLOIFG:
+            break;
+        case ADCIV_ADCINIFG:
+            break;
+        case ADCIV_ADCIFG:
+            ADC_Result = ADCMEM0;
+            calc = (ADC_Result*3.3)/4096;
+            ambient_temp = (calc-1.8663)/(-0.01169);
+            real_temp = 100*ambient_temp;
+            if(n != 4)
+            {
+                ambient[n] = real_temp;
+            }
+            else if(n == 4){
+                n = 0;
+                ambient[0] = real_temp;
+            }
+            n++;
+            avg_ambient = (ambient[0] + ambient[1] + ambient[2])/3;
+            __bic_SR_register_on_exit(LPM0_bits);            // Clear CPUOFF bit from LPM0          
+            break;
+        default:
+            break;
+    }
 }
-
-#pragma vector = TIMER0_B1_VECTOR
-__interrupt void Timer_TB0_CCR1(void){
-    
-    TB0CCTL1 &= ~CCIFG;
+// Timer B0 interrupt service routine
+#if defined(__TI_COMPILER_VERSION__) || defined(__IAR_SYSTEMS_ICC__)
+#pragma vector = TIMER0_B0_VECTOR
+__interrupt void Timer_B (void)
+#elif defined(__GNUC__)
+void __attribute__ ((interrupt(TIMER0_B0_VECTOR))) Timer_B (void)
+#else
+#error Compiler not supported!
+#endif
+{
+    temp_to_send = 'A';
+    ADCCTL0 |= ADCENC | ADCSC;                                    // Sampling and conversion start
 }
