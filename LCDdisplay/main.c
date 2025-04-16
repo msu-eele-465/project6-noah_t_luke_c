@@ -239,11 +239,14 @@ int main(void) {
     lcd_setup();
     __delay_cycles(500);
     clear_cgram();
-    position(7);
+    __delay_cycles(10000);
+    position(8);
     lcd_print("A:",2);
+    __delay_cycles(1000);
     position(40);
     lcd_write('4');
-    position(47);
+    __delay_cycles(1000);
+    position(48);
     lcd_print("P:",2);
     return_home();
     while(1)
@@ -293,10 +296,10 @@ void __attribute__ ((interrupt(USCI_B0_VECTOR))) USCIB0_ISR (void)
         RXData = UCB0RXBUF;                              // Get RX data
         if(RXData == 0xAD)
         {
-            position(13);
+            position(14);
             lcd_write(0b11011111);
             lcd_write(0b01000011);
-            position(9);
+            position(10);
             temp_set = 4;
         }
         if(temp_set != 0 && RXData != 0xAD)
