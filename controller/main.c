@@ -7,6 +7,7 @@
 #define unlock_code "1738"
 
 unsigned char data = 0x00;
+int plant[4];
 
 int lock_status = 1;
 
@@ -23,6 +24,13 @@ int real_temp;
 int thousands;
 int hundreds;
 int tens;
+
+unsigned char msb_bank;
+int msb_status;
+short plant_out;
+float plant_temp;
+int real_plant;
+int avg_plant;
 
 char temp_to_send = 0;
 
@@ -50,7 +58,7 @@ void i2c_config(){
     UCB0CTLW0 &= ~UCSWRST;
 
     // I2C interrupt
-    UCB0IE |= UCTXIE0; 
+    UCB0IE |= UCTXIE0 | UCRXIE0;
 }
 
 void timer_setup(){
@@ -58,7 +66,7 @@ void timer_setup(){
     TB0CTL |= TBCLR;  // Clear timer and dividers
     TB0CTL |= TBSSEL__ACLK;  // Use ACLK
     TB0CTL |= MC__UP;  // Up counting mode
-    TB0CCR0 = 16384;    // Compare value
+    TB0CCR0 = 32768;    // Compare value
     //TB0CCR1 = 16384;    // CCR1 value
 
     // Set up timer compare IRQs
@@ -101,6 +109,7 @@ void adc_config(){
 // Send 3 digits of the ambient temperature to the LCD in 5 transmissions
 void send_ambient()
 {
+    n = 0;
     UCB0I2CSA = 0x0B;
     thousands = (avg_ambient/1000) + 48;
     avg_ambient %= 1000;
@@ -126,7 +135,53 @@ void send_ambient()
     data = tens;
     UCB0CTLW0 |= UCTXSTT;
     while (UCB0CTL1 & UCTXSTP);
-    __delay_cycles(2000);     
+    __delay_cycles(2000); 
+    P2OUT ^= BIT5;    
+}
+
+void recieve_plant()
+{
+    msb_status = 1;
+    UCB0CTLW0 &= ~UCTR;
+    UCB0I2CSA = 0x48;
+    UCB0TBCNT = 0x02;
+    while (UCB0CTL1 & UCTXSTP);
+    UCB0CTL1 |= UCTXSTT;
+    __delay_cycles(1000);
+    UCB0I2CSA = 0x0B;
+    UCB0TBCNT = 0x01;
+    UCB0CTLW0 |= UCTR;
+}
+
+void send_plant()
+{
+    n = 0;
+    UCB0I2CSA = 0x0B;
+    thousands = (avg_plant/1000) + 48;
+    avg_plant %= 1000;
+    hundreds = (avg_plant/100) + 48;
+    avg_plant %= 100;
+    tens = (avg_plant/10) + 48; 
+    data = 0xAC;
+    UCB0CTLW0 |= UCTXSTT;
+    while (UCB0CTL1 & UCTXSTP);
+    __delay_cycles(2000);
+    data = thousands;
+    UCB0CTLW0 |= UCTXSTT;
+    while (UCB0CTL1 & UCTXSTP);
+    __delay_cycles(2000);
+    data = hundreds;
+    UCB0CTLW0 |= UCTXSTT;
+    while (UCB0CTL1 & UCTXSTP);
+    __delay_cycles(2000);
+    data = 0b00101110;
+    UCB0CTLW0 |= UCTXSTT;
+    while (UCB0CTL1 & UCTXSTP);
+    __delay_cycles(2000);
+    data = tens;
+    UCB0CTLW0 |= UCTXSTT;
+    while (UCB0CTL1 & UCTXSTP);
+    __delay_cycles(2000);
 }
 
 int main(void)
@@ -200,7 +255,10 @@ int main(void)
         }
         if(temp_to_send == 'A')
         {
-            send_ambient();
+            //send_ambient();
+            recieve_plant();
+            __delay_cycles(20000);
+            send_plant();
             temp_to_send = 0;
         }
     }
@@ -208,7 +266,53 @@ int main(void)
 
 #pragma vector = EUSCI_B0_VECTOR
 __interrupt void EUSCI_B0_I2C_ISR(void){
-    UCB0TXBUF = data;
+  switch(__even_in_range(UCB0IV, USCI_I2C_UCBIT9IFG))
+  {
+    case USCI_NONE: break;                  // Vector 0: No interrupts
+    case USCI_I2C_UCALIFG: break;           // Vector 2: ALIFG
+    case USCI_I2C_UCNACKIFG:                // Vector 4: NACKIFG
+                            UCB0CTL1 |= UCTXSTT;                  // I2C start condition
+                            break;
+    case USCI_I2C_UCSTTIFG: break;          // Vector 6: STTIFG
+    case USCI_I2C_UCSTPIFG: break;          // Vector 8: STPIFG
+    case USCI_I2C_UCRXIFG3: break;          // Vector 10: RXIFG3
+    case USCI_I2C_UCTXIFG3: break;          // Vector 14: TXIFG3
+    case USCI_I2C_UCRXIFG2: break;          // Vector 16: RXIFG2
+    case USCI_I2C_UCTXIFG2: break;          // Vector 18: TXIFG2
+    case USCI_I2C_UCRXIFG1: break;          // Vector 20: RXIFG1
+    case USCI_I2C_UCTXIFG1: break;          // Vector 22: TXIFG1
+    case USCI_I2C_UCRXIFG0:                 // Vector 24: RXIFG0
+                            if(msb_status == 1)
+                            {
+                                msb_bank = UCB0RXBUF;
+                                msb_status = 0;
+                            }
+                            else
+                            {
+                                plant_out = (msb_bank << 8) | UCB0RXBUF;
+                                plant_out = plant_out >> 3;
+                                plant_temp = plant_out * .0625;
+                                real_plant = 100*plant_temp;
+                                if(n != 4)
+                                {
+                                    plant[n] = real_plant;
+                                }
+                                else if(n == 4){
+                                    n = 0;
+                                    plant[0] = real_plant;
+                                }
+                                n++;
+                                avg_plant = (plant[0] + plant[1] + plant[2])/3;
+                            }
+                            break;
+    case USCI_I2C_UCTXIFG0:                 // Vector 26: TXIFG0
+                            UCB0TXBUF = data;
+                            break;
+    case USCI_I2C_UCBCNTIFG: break;                // Vector 28: BCNTIFG
+    case USCI_I2C_UCCLTOIFG: break;         // Vector 30: clock low timeout
+    case USCI_I2C_UCBIT9IFG: break;         // Vector 32: 9th bit
+    default: break;
+  }
 }
 
 #pragma vector = PORT3_VECTOR
