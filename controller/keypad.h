@@ -46,32 +46,10 @@ void keypad_config(void){
     P1DIR |= BIT0;  // P1.0 as output
     P1OUT &= ~BIT0;  // Clear P1.0
 
-    PM5CTL0 &= ~LOCKLPM5;  // Enable GPIO
+    P2OUT &= ~BIT5;
+    P2OUT &= ~BIT6;
+    P2OUT |= BIT7;
 }
-
-
-void lock_keypad(char str[]){ // Reset system until correct password is typed in
-
-        UCB0IE &= ~UCTXIE0;
-        P3IE &= ~(BIT0 + BIT1 + BIT2 + BIT3);   // Disable IRQs
-        P2OUT &= ~BIT7;
-        P2OUT &= ~BIT6;
-        P2OUT |= BIT5;
-           
-        while(scanPad() != str[0]);    // Wait for a 1
-        P2OUT |= BIT6;
-        while(scanPad() != str[1]);    // Wait for a 7
-        while(scanPad() != str[2]);    // Wait for a 3
-        while(scanPad() != str[3]);    // Wait for an 8
-        
-        P2OUT &= ~BIT5;
-        P2OUT &= ~BIT6;
-        P2OUT |= BIT7;
-        P3IE |= (BIT0 + BIT1 + BIT2 + BIT3);   // Enable IRQs
-        UCB0IE |= UCTXIE0;
-        
-}
-
 
 
 char scanPad() { // Scan the keypad

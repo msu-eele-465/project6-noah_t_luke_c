@@ -5,7 +5,7 @@ unsigned char RXData = 0;
 
 int startRight = 0;
 int startLeft = 0;
-int RightLeft = 0; // Left = 0 Right = 1
+unsigned char Pattern = 0; // Left = 'L' Right = 'R' Off = 'O'
 
 int current = 0;
 
@@ -32,7 +32,7 @@ void i2c_setup() {
     // Put eUSCI_B0 in reset and configure I2C slave
     UCB0CTLW0 |= UCSWRST;
     UCB0CTLW0 |= UCMODE_3 | UCSYNC;           // I2C slave, sync mode
-    UCB0I2COA0 = 0x0A | UCOAEN;               // Own address 0x0A, enable
+    UCB0I2COA0 = 0x0B | UCOAEN;               // Own address 0x0A, enable
 
     UCB0CTLW0 &= ~UCSWRST;                    // Exit reset
 
@@ -71,11 +71,21 @@ __interrupt void USCIB0_ISR(void){
         case 0x00: 
             break;
         case 0x01:
-            RightLeft = 1;
+            Pattern = 'R';
             break;
         case 0x02: 
-            RightLeft = 0;
+            Pattern = 'L';
             break;
+        case 0x88:
+            Pattern = 'R';
+            break;
+        case 0x89: 
+            Pattern = 'L';
+            break;
+        case 0x04:
+            Pattern = 'O';
+            break;
+        default: break;
     }
     
     return;
@@ -93,23 +103,26 @@ __interrupt void Timer_TB0_CCR0 (void)
 #pragma vector = TIMER0_B1_VECTOR
 __interrupt void Timer_TB0_CCR1 (void)
 {
-    if (RightLeft == 0){
+    if (Pattern == 'L'){
         startLeft = fillLeft(startLeft);  // Fill one more LED to the left
         if (startLeft > 9) {               // Reset if full
             clear();
             startLeft = 1;
         }
     }
-    else if (RightLeft == 1) {
+    else if (Pattern == 'R') {
         startRight = fillRight(startRight);  // Fill one more LED to the right
         if (startRight > 9) {               // Reset if full
             clear();
             startRight = 1;
         }
     }
+    else if (Pattern == 'O') {
+        clear();
+    }
+    
     
     TB0CCTL1 &= ~CCIFG;  // Clear interrupt flag
 }
-
 
 
