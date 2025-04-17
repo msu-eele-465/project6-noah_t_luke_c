@@ -32,7 +32,7 @@ void i2c_setup() {
     // Put eUSCI_B0 in reset and configure I2C slave
     UCB0CTLW0 |= UCSWRST;
     UCB0CTLW0 |= UCMODE_3 | UCSYNC;           // I2C slave, sync mode
-    UCB0I2COA0 = 0x0A | UCOAEN;               // Own address 0x0A, enable
+    UCB0I2COA0 = 0x0B | UCOAEN;               // Own address 0x0A, enable
 
     UCB0CTLW0 &= ~UCSWRST;                    // Exit reset
 
@@ -65,16 +65,23 @@ int main(void) {
 __interrupt void USCIB0_ISR(void){
     RXData = UCB0RXBUF;                        // Read received byte
     
-    clear();
 
     switch (RXData){
         case 0x00: 
             break;
         case 0x01:
+            clear();
             RightLeft = 1;
             break;
         case 0x02: 
+            clear();
             RightLeft = 0;
+            break;
+        case 0x04: 
+            clear();
+            RightLeft = 2;
+            break;
+        default:
             break;
     }
     

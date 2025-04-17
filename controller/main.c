@@ -208,21 +208,16 @@ int main(void)
 
     // Enable interrupts
     __enable_interrupt();
-
-    //lock_keypad(unlock_code);
     
     while (1) {
         
         if(key_flag == 1){
             switch (key_pressed) {
                 case 'D' : 
-                    data = 0x00;
+                    data = 0x04;
                     UCB0CTLW0 |= UCTXSTT;
                     P4OUT &= ~(BIT2 | BIT3);
-                    lock_keypad(unlock_code);
-                    lock_status = 0;
                     break;
-
                 case 'A' : 
                     // Heat
                     // P4.2 is heat
