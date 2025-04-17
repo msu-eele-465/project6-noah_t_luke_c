@@ -240,15 +240,21 @@ int main(void) {
     lcd_setup();
     __delay_cycles(500);
     clear_cgram();
+    __delay_cycles(1000);
+    lcd_print("Off",3);
     __delay_cycles(10000);
     position(8);
+    __delay_cycles(1000);
     lcd_print("A:",2);
     __delay_cycles(1000);
     position(40);
+    __delay_cycles(1000);
     lcd_write('4');
     __delay_cycles(1000);
     position(48);
+    __delay_cycles(1000);
     lcd_print("P:",2);
+    __delay_cycles(1000);
     return_home();
     while(1)
     {
@@ -300,7 +306,7 @@ void __attribute__ ((interrupt(USCI_B0_VECTOR))) USCIB0_ISR (void)
             position(14);
             lcd_write(0b11011111);
             lcd_write(0b01000011);
-            position(10);
+            position(9);
             temp_set = 4;
         }
         if(temp_set != 0 && RXData != 0xAD)
@@ -317,7 +323,7 @@ void __attribute__ ((interrupt(USCI_B0_VECTOR))) USCIB0_ISR (void)
         }
         if(RXData == 0xAC)
         {
-            position(53);
+            position(54);
             lcd_write(0b11011111);
             lcd_write(0b01000011);
             position(50);

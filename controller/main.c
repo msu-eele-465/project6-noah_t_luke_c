@@ -31,6 +31,7 @@ short plant_out;
 float plant_temp;
 int real_plant;
 int avg_plant;
+int k = 0;
 
 char temp_to_send = 0;
 
@@ -109,7 +110,6 @@ void adc_config(){
 // Send 3 digits of the ambient temperature to the LCD in 5 transmissions
 void send_ambient()
 {
-    n = 0;
     UCB0I2CSA = 0x0B;
     thousands = (avg_ambient/1000) + 48;
     avg_ambient %= 1000;
@@ -155,7 +155,6 @@ void recieve_plant()
 
 void send_plant()
 {
-    n = 0;
     UCB0I2CSA = 0x0B;
     thousands = (avg_plant/1000) + 48;
     avg_plant %= 1000;
@@ -255,7 +254,8 @@ int main(void)
         }
         if(temp_to_send == 'A')
         {
-            //send_ambient();
+            send_ambient();
+            __delay_cycles(200000);
             recieve_plant();
             __delay_cycles(20000);
             send_plant();
@@ -293,16 +293,16 @@ __interrupt void EUSCI_B0_I2C_ISR(void){
                                 plant_out = plant_out >> 3;
                                 plant_temp = plant_out * .0625;
                                 real_plant = 100*plant_temp;
-                                if(n != 4)
+                                if(k != 4)
                                 {
-                                    plant[n] = real_plant;
+                                    plant[k] = real_plant;
                                 }
-                                else if(n == 4){
-                                    n = 0;
+                                else if(k == 4){
+                                    k = 0;
                                     plant[0] = real_plant;
                                 }
-                                n++;
-                                avg_plant = (plant[0] + plant[1] + plant[2])/3;
+                                k++;
+                                avg_plant = (plant[0] + plant[1] + plant[2] + plant[3])/4;
                             }
                             break;
     case USCI_I2C_UCTXIFG0:                 // Vector 26: TXIFG0
@@ -365,7 +365,7 @@ void __attribute__ ((interrupt(ADC_VECTOR))) ADC_ISR (void)
                 ambient[0] = real_temp;
             }
             n++;
-            avg_ambient = (ambient[0] + ambient[1] + ambient[2])/3;
+            avg_ambient = (ambient[0] + ambient[1] + ambient[2] + ambient[3])/4;
             __bic_SR_register_on_exit(LPM0_bits);            // Clear CPUOFF bit from LPM0          
             break;
         default:
