@@ -9,15 +9,9 @@ unsigned char final = 0;
 
 char temp_set = 0;
 char plant_set = 0;
+char time_set = 0;
 
 #define CHECK_BIT(var,pos) ((var) & (1<<(pos)))
-
-const char temperature_set[] = {0b01010100, 0b01100101, 0b01101101, 0b01110000, 0b01100101, 0b01110010, 0b01110100, 0b01110100, 0b01100101, 0b01110000, 0b01101110};
-const char letters_set_window[] = {0b01010011, 0b01100101, 0b01110100, 0b01000000, 0b01010111, 0b01101001, 0b01101110, 0b01100100, 0b01101111, 0b01110111, 0b01000000, 0b01010011, 0b01101001, 0b01111010, 0b01100101};
-const char letters_pattern_static[] = {0b01010011, 0b01110100, 0b01100001, 0b01110100, 0b01101001, 0b01100011};
-const char letters_pattern_toggle[] = {0b01010100, 0b01111010, 0b01100111, 0b01100111, 0b01101100, 0b01100101};
-const char letters_pattern_up_counter[] = {0b01010101, 0b01110000, 0b00100000, 0b01100011, 0b01010100, 0b01110101, 0b01101110, 0b01110100, 0b01100101, 0b01110010};
-const char letters_pattern_in_and_out[] = {0b01001001, 0b01101110, 0b01000000, 0b01100001, 0b01101110, 0b01100110, 0b01000000, 0b01100011, 0b01110100};
 
 void lcd_init()
 {
@@ -260,30 +254,33 @@ int main(void) {
 
     while(1)
     {
-        final = RXData;
         // Switch statement prints the pattern description depending on recieved data
         switch(RXData)
         {
             case 0:     break;
-            case 0x1:   return_home();
+            case 0x1:   UCB0IE &= ~UCRXIE0;
+                        return_home();
                         lcd_print("Heat ",5);
                         RXData = 0;
+                        UCB0IE |=  UCRXIE0;
                         break;
-            case 0x2:   return_home();
+            case 0x2:   UCB0IE &= ~UCRXIE0;
+                        return_home();
                         lcd_print("Cool ",5);
                         RXData = 0;
+                        UCB0IE |=  UCRXIE0;
                         break;
-            case 0x3:   return_home();
+            case 0x3:   UCB0IE &= ~UCRXIE0;
+                        return_home();
                         lcd_print("Match",5);
-                        return_home();
                         RXData = 0;
+                        UCB0IE |=  UCRXIE0;
                         break;
-                        break;
-            case 0x04:  return_home();
+            case 0x04:  UCB0IE &= ~UCRXIE0;
+                        return_home();
                         lcd_print("Off  ",5);
-                        return_home();
                         RXData = 0;
-                        break;
+                        UCB0IE |=  UCRXIE0;
             default:    break;
         }
         
@@ -311,7 +308,7 @@ void __attribute__ ((interrupt(USCI_B0_VECTOR))) USCIB0_ISR (void)
             position(10);
             temp_set = 3;
         }
-        if(temp_set != 0 && RXData != 0xAD && RXData != 0xAC)
+        if(temp_set != 0 && RXData != 0xAD && RXData != 0xAC && RXData != 0xAB)
         {
             if(temp_set == 2)
             {
@@ -331,7 +328,7 @@ void __attribute__ ((interrupt(USCI_B0_VECTOR))) USCIB0_ISR (void)
             position(50);
             plant_set = 3;
         }
-        if(plant_set != 0 && RXData != 0xAC && RXData != 0xAD)
+        if(plant_set != 0 && RXData != 0xAC && RXData != 0xAD && RXData != 0xAB)
         {
             if(plant_set == 2)
             {
