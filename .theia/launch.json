@@ -1,0 +1,32 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "controller",
+            "type": "ccs-debug",
+            "request": "launch",
+            "projectInfo": {
+                "name": "controller",
+                "resourceId": "/controller"
+            }
+        },
+        {
+            "name": "LCDdisplay",
+            "type": "ccs-debug",
+            "request": "launch",
+            "projectInfo": {
+                "name": "LCDdisplay",
+                "resourceId": "/LCDdisplay"
+            }
+        },
+        {
+            "name": "LEDbar",
+            "type": "ccs-debug",
+            "request": "launch",
+            "projectInfo": {
+                "name": "LEDbar",
+                "resourceId": "/LEDbar"
+            }
+        }
+    ]
+}
