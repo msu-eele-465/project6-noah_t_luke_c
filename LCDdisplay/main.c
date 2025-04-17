@@ -9,15 +9,9 @@ unsigned char final = 0;
 
 char temp_set = 0;
 char plant_set = 0;
+char time_set = 0;
 
 #define CHECK_BIT(var,pos) ((var) & (1<<(pos)))
-
-const char temperature_set[] = {0b01010100, 0b01100101, 0b01101101, 0b01110000, 0b01100101, 0b01110010, 0b01110100, 0b01110100, 0b01100101, 0b01110000, 0b01101110};
-const char letters_set_window[] = {0b01010011, 0b01100101, 0b01110100, 0b01000000, 0b01010111, 0b01101001, 0b01101110, 0b01100100, 0b01101111, 0b01110111, 0b01000000, 0b01010011, 0b01101001, 0b01111010, 0b01100101};
-const char letters_pattern_static[] = {0b01010011, 0b01110100, 0b01100001, 0b01110100, 0b01101001, 0b01100011};
-const char letters_pattern_toggle[] = {0b01010100, 0b01111010, 0b01100111, 0b01100111, 0b01101100, 0b01100101};
-const char letters_pattern_up_counter[] = {0b01010101, 0b01110000, 0b00100000, 0b01100011, 0b01010100, 0b01110101, 0b01101110, 0b01110100, 0b01100101, 0b01110010};
-const char letters_pattern_in_and_out[] = {0b01001001, 0b01101110, 0b01000000, 0b01100001, 0b01101110, 0b01100110, 0b01000000, 0b01100011, 0b01110100};
 
 void lcd_init()
 {
@@ -226,7 +220,6 @@ int main(void) {
     UCB0I2COA0 = 0x0B | UCOAEN;                           //SLAVE0 own address is 0x0A| enable
     UCB0CTLW0 &=~UCSWRST;                                 //clear reset register
 
-    UCB0IE |=  UCRXIE0 | UCRXIE1| UCRXIE2 | UCRXIE3;      //receive interrupt enable
 
     //__bis_SR_register(LPM0_bits | GIE);                   // Enter LPM0 w/ interrupts
     __no_operation();
@@ -234,49 +227,61 @@ int main(void) {
     PM5CTL0 &= ~LOCKLPM5;  // Enable GPIO
 
 
-    __enable_interrupt();  // Enable global interrupts
     lcd_init();
     lcd_setup();
     lcd_setup();
     __delay_cycles(500);
     clear_cgram();
-    __delay_cycles(10000);
+    __delay_cycles(1000);
+    lcd_print("Off",3);
+    __delay_cycles(1000);
     position(8);
+    __delay_cycles(1000);
     lcd_print("A:",2);
     __delay_cycles(1000);
     position(40);
+    __delay_cycles(1000);
     lcd_write('4');
     __delay_cycles(1000);
     position(48);
+    __delay_cycles(1000);
     lcd_print("P:",2);
+    __delay_cycles(1000);
     return_home();
+
+    __enable_interrupt();  // Enable global interrupts
+    UCB0IE |=  UCRXIE0 | UCRXIE1| UCRXIE2 | UCRXIE3;      //receive interrupt enable
+
     while(1)
     {
-        final = RXData;
         // Switch statement prints the pattern description depending on recieved data
         switch(RXData)
         {
             case 0:     break;
-            case 0x1:   return_home();
+            case 0x1:   UCB0IE &= ~UCRXIE0;
+                        return_home();
                         lcd_print("Heat ",5);
                         RXData = 0;
+                        UCB0IE |=  UCRXIE0;
                         break;
-            case 0x2:   return_home();
-                        lcd_print("Cool ",5);
-                        RXData = 100;
-                        break;
-            case 0x3:   return_home();
-                        lcd_print("Match",5);
+            case 0x2:   UCB0IE &= ~UCRXIE0;
                         return_home();
+                        lcd_print("Cool ",5);
                         RXData = 0;
+                        UCB0IE |=  UCRXIE0;
                         break;
-                        break;
-            case 0x14:  clear_cgram();
-                        lcd_print(letters_pattern_static,4);
+            case 0x3:   UCB0IE &= ~UCRXIE0;
+                        return_home();
+                        lcd_print("Match",5);
                         RXData = 0;
+                        UCB0IE |=  UCRXIE0;
                         break;
-            case 0x16:  clear_cgram();
-                        break;
+            case 0x04:  UCB0IE &= ~UCRXIE0;
+                        return_home();
+                        lcd_print("Off  ",5);
+                        RXData = 0;
+                        UCB0IE |=  UCRXIE0;
+            default:    break;
         }
         
         // This switch statement prints the last pressed key to the final position of the LCD
@@ -301,14 +306,14 @@ void __attribute__ ((interrupt(USCI_B0_VECTOR))) USCIB0_ISR (void)
             lcd_write(0b11011111);
             lcd_write(0b01000011);
             position(10);
-            temp_set = 4;
+            temp_set = 3;
         }
-        if(temp_set != 0 && RXData != 0xAD)
+        if(temp_set != 0 && RXData != 0xAD && RXData != 0xAC && RXData != 0xAB)
         {
             if(temp_set == 2)
             {
-                lcd_write('.');
                 lcd_write(RXData);
+                lcd_write('.');
             }
             else{
                 lcd_write(RXData);
@@ -317,18 +322,18 @@ void __attribute__ ((interrupt(USCI_B0_VECTOR))) USCIB0_ISR (void)
         }
         if(RXData == 0xAC)
         {
-            position(53);
+            position(54);
             lcd_write(0b11011111);
             lcd_write(0b01000011);
             position(50);
-            plant_set = 4;
+            plant_set = 3;
         }
-        if(plant_set != 0 && RXData != 0xAC)
+        if(plant_set != 0 && RXData != 0xAC && RXData != 0xAD && RXData != 0xAB)
         {
             if(plant_set == 2)
             {
-                lcd_write('.');
                 lcd_write(RXData);
+                lcd_write('.');
             }
             else{
                 lcd_write(RXData);

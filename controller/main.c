@@ -9,7 +9,7 @@
 unsigned char data = 0x00;
 int plant[4];
 
-int lock_status = 1;
+int match_status = 0;
 
 volatile char key_pressed = 0;
 volatile int key_flag = 0;
@@ -31,6 +31,9 @@ short plant_out;
 float plant_temp;
 int real_plant;
 int avg_plant;
+int k = 0;
+
+float time = 0;
 
 char temp_to_send = 0;
 
@@ -47,8 +50,8 @@ void i2c_config(){
                                             // after UCB0TBCNT is reached
 
     UCB0TBCNT = 0x0001;                     // number of bytes to be sent
-    UCB0I2CSA = 0x0A;                       // Slave address
-                                            // Two slaves are being used, 0x0A is the LEDbar, 0x0B is the LCD
+    UCB0I2CSA = 0x0B;                       // Slave address
+                                            // Three slaves are being used, both ar 0x0B
                                             // When one of those keys is pressed, update slave address, send data, set back to 0x00  
     // I2C pins, 1.2 SDA, 1.3 SCL
     P1SEL1 &= ~(BIT2 & BIT3);
@@ -66,7 +69,7 @@ void timer_setup(){
     TB0CTL |= TBCLR;  // Clear timer and dividers
     TB0CTL |= TBSSEL__ACLK;  // Use ACLK
     TB0CTL |= MC__UP;  // Up counting mode
-    TB0CCR0 = 32768;    // Compare value
+    TB0CCR0 = 16384;    // Compare value
     //TB0CCR1 = 16384;    // CCR1 value
 
     // Set up timer compare IRQs
@@ -109,7 +112,6 @@ void adc_config(){
 // Send 3 digits of the ambient temperature to the LCD in 5 transmissions
 void send_ambient()
 {
-    n = 0;
     UCB0I2CSA = 0x0B;
     thousands = (avg_ambient/1000) + 48;
     avg_ambient %= 1000;
@@ -155,7 +157,6 @@ void recieve_plant()
 
 void send_plant()
 {
-    n = 0;
     UCB0I2CSA = 0x0B;
     thousands = (avg_plant/1000) + 48;
     avg_plant %= 1000;
@@ -209,44 +210,54 @@ int main(void)
 
     // Enable interrupts
     __enable_interrupt();
-
-    //lock_keypad(unlock_code);
     
     while (1) {
         
         if(key_flag == 1){
             switch (key_pressed) {
-                case 'D' : 
-                    data = 0x00;
+                case 'D' :
+                    match_status = 0;
+                    TB0CCTL0 &= ~CCIE; 
+                    data = 0x04;
                     UCB0CTLW0 |= UCTXSTT;
                     P4OUT &= ~(BIT2 | BIT3);
-                    lock_keypad(unlock_code);
-                    lock_status = 0;
+                    time = 0;
+                    TB0CCTL0 |= CCIE;
                     break;
-
                 case 'A' : 
                     // Heat
                     // P4.2 is heat
+                    match_status = 0;
+                    TB0CCTL0 &= ~CCIE;
                     P4OUT |= BIT2;
                     P4OUT &= ~BIT3;
                     data = 0x01;
                     UCB0CTLW0 |= UCTXSTT;
+                    time = 0;
+                    TB0CCTL0 |= CCIE;
                     break;
 
                 case 'B' : 
                     // Cool
                     // P4.3 is cool
+                    match_status = 0;
+                    TB0CCTL0 &= ~CCIE;
                     P4OUT |= BIT3;
                     P4OUT &= ~BIT2;
                     data = 0x02;
                     UCB0CTLW0 |= UCTXSTT;
+                    time = 0;
+                    TB0CCTL0 |= CCIE;
                     break;
 
                 case 'C' : 
                     // Match Ambient
-
+                    TB0CCTL0 &= ~CCIE;
+                    match_status = 1;
                     data = 0x03;
                     UCB0CTLW0 |= UCTXSTT;
+                    time = 0;
+                    TB0CCTL0 |= CCIE;
                     break;
                     
                 default: break;                
@@ -255,11 +266,31 @@ int main(void)
         }
         if(temp_to_send == 'A')
         {
-            //send_ambient();
+            send_ambient();
+            __delay_cycles(200000);
             recieve_plant();
             __delay_cycles(20000);
             send_plant();
+            __delay_cycles(200000);
+
             temp_to_send = 0;
+        }
+        if (match_status == 1) 
+        {
+            if (ambient_temp > plant_temp){
+                // Heat
+                P4OUT |= BIT2;
+                P4OUT &= ~BIT3;
+                data = 0x88;
+                UCB0CTLW0 |= UCTXSTT;
+            }
+            else if (ambient_temp < plant_temp) {
+                // Cool
+                P4OUT |= BIT3;
+                P4OUT &= ~BIT2;
+                data = 0x89;
+                UCB0CTLW0 |= UCTXSTT;
+            }
         }
     }
 }
@@ -293,16 +324,16 @@ __interrupt void EUSCI_B0_I2C_ISR(void){
                                 plant_out = plant_out >> 3;
                                 plant_temp = plant_out * .0625;
                                 real_plant = 100*plant_temp;
-                                if(n != 4)
+                                if(k != 4)
                                 {
-                                    plant[n] = real_plant;
+                                    plant[k] = real_plant;
                                 }
-                                else if(n == 4){
-                                    n = 0;
+                                else if(k == 4){
+                                    k = 0;
                                     plant[0] = real_plant;
                                 }
-                                n++;
-                                avg_plant = (plant[0] + plant[1] + plant[2])/3;
+                                k++;
+                                avg_plant = (plant[0] + plant[1] + plant[2] + plant[3])/4;
                             }
                             break;
     case USCI_I2C_UCTXIFG0:                 // Vector 26: TXIFG0
@@ -365,7 +396,7 @@ void __attribute__ ((interrupt(ADC_VECTOR))) ADC_ISR (void)
                 ambient[0] = real_temp;
             }
             n++;
-            avg_ambient = (ambient[0] + ambient[1] + ambient[2])/3;
+            avg_ambient = (ambient[0] + ambient[1] + ambient[2] + ambient[3])/4;
             __bic_SR_register_on_exit(LPM0_bits);            // Clear CPUOFF bit from LPM0          
             break;
         default:
@@ -383,5 +414,6 @@ void __attribute__ ((interrupt(TIMER0_B0_VECTOR))) Timer_B (void)
 #endif
 {
     temp_to_send = 'A';
+    time = time + .5;
     ADCCTL0 |= ADCENC | ADCSC;                                    // Sampling and conversion start
 }
