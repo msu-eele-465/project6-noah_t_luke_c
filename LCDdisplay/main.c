@@ -8,6 +8,7 @@ unsigned char RXData = 0;
 unsigned char final = 0;
 
 char temp_set = 0;
+char plant_set = 0;
 
 #define CHECK_BIT(var,pos) ((var) & (1<<(pos)))
 
@@ -313,6 +314,26 @@ void __attribute__ ((interrupt(USCI_B0_VECTOR))) USCIB0_ISR (void)
                 lcd_write(RXData);
             }
             temp_set--;
+        }
+        if(RXData == 0xAC)
+        {
+            position(53);
+            lcd_write(0b11011111);
+            lcd_write(0b01000011);
+            position(50);
+            plant_set = 4;
+        }
+        if(plant_set != 0 && RXData != 0xAC)
+        {
+            if(plant_set == 2)
+            {
+                lcd_write('.');
+                lcd_write(RXData);
+            }
+            else{
+                lcd_write(RXData);
+            }
+            plant_set--;
         }
         P2OUT ^= BIT6;
         __bic_SR_register_on_exit(LPM0_bits);                       // Vector 24: RXIFG0 break;

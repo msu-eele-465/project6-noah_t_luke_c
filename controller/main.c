@@ -7,7 +7,7 @@
 #define unlock_code "1738"
 
 unsigned char data = 0x00;
-volatile unsigned char plant;
+int plant[4];
 
 int lock_status = 1;
 
@@ -29,6 +29,8 @@ unsigned char msb_bank;
 int msb_status;
 short plant_out;
 float plant_temp;
+int real_plant;
+int avg_plant;
 
 char temp_to_send = 0;
 
@@ -107,6 +109,7 @@ void adc_config(){
 // Send 3 digits of the ambient temperature to the LCD in 5 transmissions
 void send_ambient()
 {
+    n = 0;
     UCB0I2CSA = 0x0B;
     thousands = (avg_ambient/1000) + 48;
     avg_ambient %= 1000;
@@ -148,6 +151,37 @@ void recieve_plant()
     UCB0I2CSA = 0x0B;
     UCB0TBCNT = 0x01;
     UCB0CTLW0 |= UCTR;
+}
+
+void send_plant()
+{
+    n = 0;
+    UCB0I2CSA = 0x0B;
+    thousands = (avg_plant/1000) + 48;
+    avg_plant %= 1000;
+    hundreds = (avg_plant/100) + 48;
+    avg_plant %= 100;
+    tens = (avg_plant/10) + 48; 
+    data = 0xAC;
+    UCB0CTLW0 |= UCTXSTT;
+    while (UCB0CTL1 & UCTXSTP);
+    __delay_cycles(2000);
+    data = thousands;
+    UCB0CTLW0 |= UCTXSTT;
+    while (UCB0CTL1 & UCTXSTP);
+    __delay_cycles(2000);
+    data = hundreds;
+    UCB0CTLW0 |= UCTXSTT;
+    while (UCB0CTL1 & UCTXSTP);
+    __delay_cycles(2000);
+    data = 0b00101110;
+    UCB0CTLW0 |= UCTXSTT;
+    while (UCB0CTL1 & UCTXSTP);
+    __delay_cycles(2000);
+    data = tens;
+    UCB0CTLW0 |= UCTXSTT;
+    while (UCB0CTL1 & UCTXSTP);
+    __delay_cycles(2000);
 }
 
 int main(void)
@@ -222,10 +256,11 @@ int main(void)
         if(temp_to_send == 'A')
         {
             //send_ambient();
-            //recieve_plant();
+            recieve_plant();
+            __delay_cycles(20000);
+            send_plant();
             temp_to_send = 0;
         }
-        recieve_plant();
     }
 }
 
@@ -257,6 +292,17 @@ __interrupt void EUSCI_B0_I2C_ISR(void){
                                 plant_out = (msb_bank << 8) | UCB0RXBUF;
                                 plant_out = plant_out >> 3;
                                 plant_temp = plant_out * .0625;
+                                real_plant = 100*plant_temp;
+                                if(n != 4)
+                                {
+                                    plant[n] = real_plant;
+                                }
+                                else if(n == 4){
+                                    n = 0;
+                                    plant[0] = real_plant;
+                                }
+                                n++;
+                                avg_plant = (plant[0] + plant[1] + plant[2])/3;
                             }
                             break;
     case USCI_I2C_UCTXIFG0:                 // Vector 26: TXIFG0
